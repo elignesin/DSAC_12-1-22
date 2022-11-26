@@ -1,0 +1,151 @@
+---
+title: "DSAC Modeling Workshop"
+date: "December 1, 2022"
+author: Eli Gnesin
+output: html_document
+---
+
+# What is Statistical Learning?
+
+Statistical Learning is this overarching idea that we take a question, we collect data on that question, we used that data to train and validate an algorithm, and then we assess the output of that algorithm and determine if we have/can answer our question.
+
+Predictive modeling, as a subset of this, is the idea of using these algorithms to make a prediction about future data.
+
+## Setup
+
+Here, we load in the necessary code libraries that we will use later. The last lines help set the standards for how the file will render when we turn it into a PDF/HTML.
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(MASS)
+library(e1071)
+library(class)
+library(rpart)
+library(rpart.plot)
+knitr::opts_chunk$set(include=TRUE, echo = TRUE, message = FALSE, 
+                      warning = FALSE, error = FALSE, 
+                      fig.width=6, fig.height=5, fig.align='center'
+                      )
+```
+
+We also need to load in the dataset. This is a dataset I collected with a friend for a senior project at William & Mary in Fall 2021. The dataset contains statistics and salary information for 805 NHL players in the 2018-2019 season (chosen because it was the last pre-Covid season at the time of data collection). We read this data in as a tibble (a dataframe, but in tidyverse).
+
+```{r}
+data_full = read_csv("NHL_Data.csv")
+head(data_full)
+```
+
+This dataset contains 34 columns, of which there are multiple things we could consider response variables (we could use +/-, Salary, or PointShares as a response variable). For this analysis, we're going to try to predict a player's salary from that year using some of the other columns.
+
+# Modeling
+
+## Cleaning/Wrangling
+
+All good modeling starts with data cleaning. This dataset is largely cleaned (I've cleaned it in the past using Python and Excel). There are, however, still a couple of decisions we can make for cleaning:
+
+1.  The dataset includes 3 columns each for goals and assists broken down by team strength (Power Play/Penalty Kill/Even Strength), which we aren't going to need because they're combined collinear with Goals/Assists. This is also an issue with Goals and Assists to points, but we're leaving that for right now because we might need it later.
+2.  The dataset contains both shot percentage and shots, both TOI and Average TOI, and all of FO wins, FO losses, and FO percentage. We can choose one from each of these buckets.
+3.  The dataset contains dummy columns for each of the 4 positions, but we'll only need 3 of those columns for linear models. We're leaving the last for right now because we might need it later.
+4.  One question to be asked is, does playing for a Canadian team matter? And does playing in the East vs. West matter? We can make columns to account for that.
+
+```{r data-cleaning}
+canada_teams = c("EDM", "TOR", "CGY", "WPG", "VAN", "MTL", "OTT")
+west_teams = c("EDM", "CHI", "LAK", "DAL", "ANA", "NSH", "MIN", "STL", "SJS",
+               "CGY", "VEG", "ARI", "COL", "WPG", "VAN")
+
+data_clean = data_full %>%
+  #Remove the team-strength based points
+  dplyr::select(!c(EVG, PPG, SHG, EVA, PPA, SHA)) %>%
+  #Remove Step 2
+  dplyr::select(!c(`S%`, ATOI, `FO%`)) %>%
+  #I'm going to make shots and TOI on a per-game basis
+  mutate(S = S/GP,
+         TOI = TOI/GP) %>%
+  #Remove position redundancy
+  dplyr::select(!c(Pos)) %>%
+  #Remove players with multiple teams (drops 71 rows)
+  filter(Tm != "TOT") %>%
+  #Add Canada and Conference with Mutate
+  mutate(canada = if_else(Tm %in% canada_teams, 1, 0)) %>%
+  mutate(west = if_else(Tm %in% west_teams, 1, 0)) %>%
+  #The rank column isn't useful here, nor is the name column and the team column
+  dplyr::select(!c(Rk, Player, Tm)) %>%
+  #Rename +/- to be useful later
+  rename(PM = "+/-")
+```
+
+This leaves us with 734 observations and 23 columns, on which we can begin to fit and assess some models. In a true statistical learning environment, you would want to be much more rigorous with your data cleaning and wrangling. For example, why did we remove players with multiple teams? Why did we choose Shots over shot percentage and faceoffs over FO%? Why are there no goalies in this dataset? Depending on the question we want to ask, the answers to those questions may require us to do some more data collection, or make a strong evidential argument based on our decisions.
+
+We can now take a look at the data using `ggplot`:
+
+```{r histogram1}
+ggplot(data_clean) +
+  geom_histogram(aes(x = Salary), fill = "lightblue") +
+  labs(title = "Histogram of Player Salaries",
+       x = "Salary ($)",
+       y = "Count")
+```
+
+## The first model: Linear Regression
+
+The first model we'll try here is Ordinary Least Squares. We'll start by regressing salary on just age and points:
+
+```{r model1}
+mod1 = lm(Salary ~ Age + PTS, data = data_clean)
+summary(mod1)
+```
+We can do a whole lot better, though. Let's try the same model, but with games played, age, points, shots, hits, and blocks:
+
+```{r model2}
+mod2 = lm(Salary ~ GP + Age + PTS + S + HIT + BLK, data = data_clean)
+summary(mod2)
+```
+
+For the sake of completeness, what does the model look like with almost all of our columns added:
+
+```{r modelfull}
+mod3 = lm(Salary ~ . - PTS - D - PM, data = data_clean)
+summary(mod3)
+```
+
+Well, this model isn't awesome. A lot of the variables are not statistically significant at any level, and very few are statistically significant at the 5% level of significance (the generally accepted standard). Maybe, we would be better off trying a non-linear model. This is also where we might consider feature selection algorithms, such as LASSO or Ridge regression, interaction terms, or transformations of our variables.
+
+## A non-linear model: Trees
+
+Decision trees are a non-linear modeling technique where we make splits on the data in order to (in this case), fit smaller regression models on "more pure" subsets of the data defined by those splits. They're more commonly used in classification exercises, so we'll do both here, first fitting a model on the dataset to predict salary:
+
+```{r tree1}
+tree1 = rpart(Salary ~ . - PM, data = data_clean, 
+              method = "anova")
+
+rpart.plot(tree1, box.palette = "Grays", type = 2)
+```
+
+Okay, this tree is okay, but not spectacular. It might be nice to narrow this tree down to only splitting on a couple of variables we think would be useful:
+
+```{r tree2}
+tree2 = rpart(Salary ~ Age + GP + G + A + PTS + S, data = data_clean,
+              method = "anova", minsplit = 10)
+
+rpart.plot(tree2, box.palette = "Grays", type = 2)
+```
+This also isn't great, 43% of our data is out in the far leaf on the left, and that's not ideal. In a more rigorous setting, we would turn around and ask ourselves whether our data set was good, whether we're even asking the right question here, and we would explore other modeling techniques for regression (such as a Bayesian model, if we have prior information to include).
+
+### Trees for Classification
+
+While on trees, we'll end with a brief discussion of classification models. Classification is fairly intuitive, we're attempting to use our data to predict the "class assignment" of an observation. Unlike regression, the response variable (what we're predicting) is discrete, often a binary "yes/no". As an example, we'll use a tree, along with some of the variables we have, to try to predict if a player plays for a Western Conference team (the `west` variable is 1):
+
+```{r tree3}
+tree3 = rpart(west ~ Age + GP + G + A + PTS + PIM + Salary + HIT + Handed,
+              data = data_clean, method = "class", minsplit = 20)
+
+rpart.plot(tree3, type = 2)
+```
+A couple of interesting things show up here, most noticeably that Hits and PIM are commonly used for split criteria. This example is, as with most of the others, fairly contrived. With more data, in a time series, you could choose to explore this in the context of how does play differ between the conferences and what does that tell us. To this point however, the purpose of this workshop is to introduce you to the very basics of modeling with sports data.
+
+### Acknowledgements
+
+Thank you to Hockey-Reference and Capology for the data, and to Nick Kauffman for helping clean it up.
