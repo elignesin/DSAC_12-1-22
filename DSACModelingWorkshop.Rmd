@@ -89,6 +89,38 @@ ggplot(data_clean) +
        y = "Count")
 ```
 
+```{r histogram1-log}
+ggplot(data_clean) +
+  geom_histogram(aes(x = log(Salary)), fill = "lightblue") +
+  labs(title = "Histogram of Player Salaries (log-scale)",
+       x = "log(Salary ($))",
+       y = "Count")
+```
+
+```{r plot2}
+ggplot(data_clean) +
+  geom_histogram(aes(x = Age), fill = "blue", bins = 24) +
+  labs(title = "Histogram of Player Age",
+       x = "Age",
+       y = "Count")
+```
+
+```{r plot3}
+ggplot(data_clean) +
+  geom_histogram(aes(x = PTS), fill = "lightblue") +
+  labs(title = "Histogram of Player Points",
+       x = "Points",
+       y = "Count")
+```
+
+```{r plot4}
+ggplot(data_clean) +
+  geom_density(aes(x = TOI), fill = "lightblue", color = "lightblue") +
+  labs(title = "Density of Player TOI/GP",
+       x = "TOI/GP",
+       y = "Count")
+```
+
 ## The first model: Linear Regression
 
 The first model we'll try here is Ordinary Least Squares. We'll start by regressing salary on just age and points:
