@@ -20,9 +20,6 @@ library(tidyverse)
 library(dplyr)
 library(magrittr)
 library(ggplot2)
-library(MASS)
-library(e1071)
-library(class)
 library(rpart)
 library(rpart.plot)
 knitr::opts_chunk$set(include=TRUE, echo = TRUE, message = FALSE, 
@@ -180,4 +177,4 @@ A couple of interesting things show up here, most noticeably that Hits and PIM a
 
 ### Acknowledgements
 
-Thank you to Hockey-Reference and Capology for the data, and to Nick Kauffman for helping clean it up.
+Thank you to Hockey-Reference and CapFriendly for the data, and to Nick Kauffman for helping clean it up.
